@@ -1,0 +1,9 @@
+{
+  "name": "sim-game",
+  "version": "1.0.0",
+  "private": true,
+  "description": "SIM: mobile browser game (static, no build)",
+  "scripts": {
+    "start": "npx serve ."
+  }
+}
