@@ -1,0 +1,65 @@
+# Положи этот файл в репозиторий: .github/workflows/unpack-zip.yml
+# Как работает: загружаешь в корень репозитория любой *.zip (например sim-game.zip),
+# workflow распаковывает его в корень, удаляет архив и коммитит файлы.
+# Vercel видит новый коммит и сам выкладывает сайт.
+name: Unpack zip
+
+on:
+  push:
+    paths:
+      - '*.zip'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: unpack-zip
+  cancel-in-progress: false
+
+jobs:
+  unpack:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Find zip
+        id: find
+        run: |
+          shopt -s nullglob
+          files=(*.zip)
+          if [ ${#files[@]} -eq 0 ]; then
+            echo "found=false" >> "$GITHUB_OUTPUT"
+            echo "В корне нет zip, делать нечего."
+          else
+            echo "found=true" >> "$GITHUB_OUTPUT"
+            echo "zip=${files[0]}" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Unpack
+        if: steps.find.outputs.found == 'true'
+        run: |
+          zip="${{ steps.find.outputs.zip }}"
+          tmp="$(mktemp -d)"
+          unzip -q -o "$zip" -d "$tmp"
+          # если всё лежит в одной папке внутри архива, берём её содержимое
+          top=("$tmp"/*)
+          if [ ${#top[@]} -eq 1 ] && [ -d "${top[0]}" ]; then src="${top[0]}"; else src="$tmp"; fi
+          # не даём архиву перезаписать сами workflow
+          rm -rf "$src/.github" "$src/.git"
+          cp -a "$src"/. .
+          rm -f "$zip"
+          rm -rf "$tmp"
+
+      - name: Commit
+        if: steps.find.outputs.found == 'true'
+        run: |
+          git config user.name "${{ github.actor }}"
+          git config user.email "${{ github.actor_id }}+${{ github.actor }}@users.noreply.github.com"
+          git add -A
+          if git diff --cached --quiet; then
+            echo "Изменений нет."
+          else
+            git commit -m "Unpack ${{ steps.find.outputs.zip }}"
+            git push
+          fi
